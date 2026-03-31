@@ -209,6 +209,7 @@ function start_node() {
     nohup ${geth_bin} --config ${datadir}/config.toml \
         --datadir ${datadir} \
         --nodekey ${datadir}/geth/nodekey \
+        --cache 512 \
         --rpc.allow-unprotected-txs --allow-insecure-unlock \
         --ws --ws.addr 0.0.0.0 --ws.port ${ws_port} \
         --http --http.addr 0.0.0.0 --http.port ${http_port} --http.corsdomain "*" \
