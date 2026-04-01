@@ -54,6 +54,11 @@ function reset_genesis() {
         cd ${workspace}/genesis && git reset --hard ${GENESIS_COMMIT}
     fi
     cd ${workspace}/genesis
+
+    # 1. Update the 'genesis' submodule safely
+    # Backup user templates, force-update the repository to a specific 
+    # compatible version ($GENESIS_COMMIT) to prevent breaking changes, 
+    # and then restore the user templates.
     cp genesis-template.json genesis-template.json.bk
     cp scripts/init_holders.template scripts/init_holders.template.bk
     git stash
@@ -62,8 +67,11 @@ function reset_genesis() {
     mv genesis-template.json.bk genesis-template.json
     mv scripts/init_holders.template.bk scripts/init_holders.template
 
+    # 2. Install project-specific dependencies
     poetry install --no-root
     npm install
+    
+    # 3. Clean up and reinstall Foundry framework components (Standard Library & Tests)
     rm -rf lib/forge-std
     forge install --no-git foundry-rs/forge-std@v1.7.3
     cd lib/forge-std/lib
@@ -78,7 +86,10 @@ function prepare_config() {
     passedHardforkTime=$(expr $(date +%s) + ${PASSED_FORK_DELAY})
     echo "passedHardforkTime "${passedHardforkTime} > ${workspace}/.local/hardforkTime.txt
     initHolders=${INIT_HOLDER}
+
+    # 1. Collect Validator Information & Setup Node Directories
     for ((i = 0; i < size; i++)); do
+        # read their randomly generated cryptographic key files (Consensus addresses and BLS vote keys)
         for f in ${workspace}/.local/validator${i}/keystore/*; do
             cons_addr="0x$(cat ${f} | jq -r .address)"
             initHolders=${initHolders}","${cons_addr}
@@ -90,11 +101,15 @@ function prepare_config() {
         cp ${workspace}/keys/password.txt ./
         cp ${workspace}/.local/hardforkTime.txt ./
         bbcfee_addrs=${fee_addr}
+        # It assigns a massive, hardcoded amount of "voting power" (0x000001d1a94a2000) so the node has the authority to forge blocks.
         powers="0x000001d1a94a2000" #2000000000000
         mv ${workspace}/.local/bls${i}/bls ./ && rm -rf ${workspace}/.local/bls${i}
         vote_addr=0x$(cat ./bls/keystore/*json | jq .pubkey | sed 's/"//g')
+        # it writes all these unique peices: the consensus address, fee collection address, voting power, and BLS vote address
         echo "${cons_addr},${bbcfee_addrs},${fee_addr},${powers},${vote_addr}" >> ${workspace}/genesis/validators.conf
         if [ ${EnableSentryNode} = true ]; then
+            # Sentry nodes act as a protective firewall/proxy for Validators, 
+            # hiding the Validator's real IP address from public P2P network attacks.
             mkdir -p ${workspace}/.local/sentry${i}
         fi
     done
@@ -103,11 +118,15 @@ function prepare_config() {
     fi
     rm -f ${workspace}/.local/hardforkTime.txt
 
+    # 2. Hack / Patch the System Smart Contracts
     cd ${workspace}/genesis/
     git checkout HEAD contracts
+    # "hack" the source code of the core BSCValidatorSet.sol smart contract right before compiling. 
+    # They lower the turnLength and explicitly tell the system to ignore validator punishments/updates for the first 2,000 blocks to ensure your local network starts smoothly without validators instantly getting jailed.
     sed -i -e  's/alreadyInit = true;/turnLength = 16;alreadyInit = true;/' ${workspace}/genesis/contracts/BSCValidatorSet.sol
     sed -i -e  's/public onlyCoinbase onlyZeroGasPrice {/public onlyCoinbase onlyZeroGasPrice {if (block.number < 2000) return;/' ${workspace}/genesis/contracts/BSCValidatorSet.sol
     
+    # 3. Generate the Final Genesis Block
     poetry run python -m scripts.generate generate-validators
     poetry run python -m scripts.generate generate-init-holders "${initHolders}"
     poetry run python -m scripts.generate dev \
@@ -133,6 +152,7 @@ function prepare_config() {
 # 6. Initialize the geth network for each node using the generated genesis.json
 function initNetwork() {
     cd ${workspace}
+    # 1. Assigning P2P Identities
     for ((i = 0; i < size; i++)); do
         mkdir ${workspace}/.local/node${i}/geth
         cp ${workspace}/keys/validator-nodekey${i} ${workspace}/.local/node${i}/geth/nodekey
@@ -147,6 +167,7 @@ function initNetwork() {
         cp ${workspace}/keys/fullnode-nodekey0 ${workspace}/.local/fullnode0/geth/nodekey
     fi
     
+    # 2. Preparing Network Arguments
     init_extra_args=""
     if [ ${EnableSentryNode} = true ]; then
         init_extra_args="--init.sentrynode-size ${size} --init.sentrynode-ports 30411"
@@ -168,8 +189,12 @@ function initNetwork() {
             init_extra_args="${init_extra_args} --init.evn-validator-whitelist"
         fi
     fi
+
+    # 3. Generating Network Configs (config.toml)
     ${workspace}/bin/geth init-network --init.dir ${workspace}/.local --init.size=${size} --config ${workspace}/config.toml ${init_extra_args} ${workspace}/genesis/genesis.json
     rm -f ${workspace}/*bsc.log*
+
+    # 4. Initializing the Blockchain Database (geth init)
     for ((i = 0; i < size; i++)); do
         sed -i -e '/"<nil>"/d' ${workspace}/.local/node${i}/config.toml
         # init genesis
@@ -238,6 +263,7 @@ function native_start() {
     LastHardforkTime=$(expr ${PassedForkTime} + ${LAST_FORK_MORE_DELAY})
     rialtoHash=`cat ${workspace}/.local/node0/init.log|grep "database=chaindata"|awk -F"=" '{print $NF}'|awk -F'"' '{print $1}'`
 
+    # Starting Validator Nodes
     for ((i=0; i<size; i++)); do
         datadir="${workspace}/.local/node${i}"
 
@@ -249,6 +275,8 @@ function native_start() {
         # get validator address
         cons_addr="0x$(jq -r .address ${datadir}/keystore/*)"
 
+        # Copying Geth binaries to unique names (geth0, geth1...) 
+        # for easier node-specific monitoring in htop.
         cp ${workspace}/bin/geth ${datadir}/geth${i}
 
         base=$((8545 + i*2))
@@ -256,6 +284,7 @@ function native_start() {
             $base $base $((6060+i*2)) $((7060+i*2))
     done
 
+    # Starting Sentry Nodes
     if [ ${EnableSentryNode} = true ]; then
         sleep 10
         for ((i=0; i<size; i++)); do
