@@ -244,7 +244,114 @@ function patch_p2p_network() {
     fi
 }
 
+# 8. Extract variables and generate docker-compose file
+function generate_compose() {
+    PassedForkTime=$(cat ${workspace}/.local/node0/hardforkTime.txt|grep passedHardforkTime|awk -F" " '{print $NF}')
+    LastHardforkTime=$(expr ${PassedForkTime} + ${LAST_FORK_MORE_DELAY})
+    rialtoHash=$(cat ${workspace}/.local/node0/init.log|grep "database=chaindata"|awk -F"=" '{print $NF}'|awk -F'"' '{print $1}')
 
+    echo "Generating .env.cluster..."
+    cat <<EOF > ${workspace}/.env.cluster
+RIALTO_HASH=${rialtoHash}
+PASSED_FORK_TIME=${PassedForkTime}
+LAST_HARDFORK_TIME=${LastHardforkTime}
+FULL_IMMUTABILITY_THRESHOLD=${FullImmutabilityThreshold}
+BREATHE_BLOCK_INTERVAL=${BreatheBlockInterval}
+MIN_FOR_BLOB_REQUESTS=${MinBlocksForBlobRequests}
+DEFAULT_EXTRA_RESERVE=${DefaultExtraReserveForBlobRequests}
+EOF
+
+    COMPOSE_FILE=${workspace}/docker-compose.cluster.yml
+    echo "Generating ${COMPOSE_FILE}..."
+    echo "services:" > $COMPOSE_FILE
+
+    # Validators
+    for ((i=0; i<size; i++)); do
+        base_rpc=$((8545 + i*2))
+        base_metrics=$((6060 + i*2))
+        base_pprof=$((7060 + i*2))
+        p2p_port=$((30311 + i))
+        
+        cat <<EOF >> $COMPOSE_FILE
+  bsc-node-${i}:
+    image: bsc-toolbox:latest
+    container_name: bsc-node-${i}
+    env_file: .env.cluster
+    environment:
+      - NODE_TYPE=node
+      - NODE_INDEX=${i}
+    volumes:
+      - .:/node_deploy
+    ports:
+      - "${base_rpc}:8545" # RPC & WS
+      - "${base_metrics}:6060" # Metrics
+      - "${base_pprof}:7060" # Pprof
+      - "${p2p_port}:${p2p_port}" # P2P TCP
+      - "${p2p_port}:${p2p_port}/udp" # P2P UDP
+    command: ["/node_deploy/node_entrypoint.sh"]
+
+EOF
+    done
+
+    # Sentry
+    if [ ${EnableSentryNode} = true ]; then
+        for ((i=0; i<size; i++)); do
+            base_rpc=$((8545 + i*2 + 100)) # Shift sentry ports
+            base_metrics=$((6060 + i*2 + 100))
+            base_pprof=$((7060 + i*2 + 100))
+            p2p_port=$((30411 + i))
+            
+            cat <<EOF >> $COMPOSE_FILE
+  bsc-sentry-${i}:
+    image: bsc-toolbox:latest
+    container_name: bsc-sentry-${i}
+    env_file: .env.cluster
+    environment:
+      - NODE_TYPE=sentry
+      - NODE_INDEX=${i}
+    volumes:
+      - .:/node_deploy
+    ports:
+      - "${base_rpc}:8545"
+      - "${base_metrics}:6060"
+      - "${base_pprof}:7060"
+      - "${p2p_port}:${p2p_port}"
+      - "${p2p_port}:${p2p_port}/udp"
+    command: ["/node_deploy/node_entrypoint.sh"]
+
+EOF
+        done
+    fi
+
+    # Full Node
+    if [ ${EnableFullNode} = true ]; then
+        base_rpc=8645
+        base_metrics=6160
+        base_pprof=7160
+        p2p_port=30511
+        cat <<EOF >> $COMPOSE_FILE
+  bsc-fullnode-0:
+    image: bsc-toolbox:latest
+    container_name: bsc-fullnode-0
+    env_file: .env.cluster
+    environment:
+      - NODE_TYPE=full
+      - NODE_INDEX=0
+    volumes:
+      - .:/node_deploy
+    ports:
+      - "${base_rpc}:8545"
+      - "${base_metrics}:6060"
+      - "${base_pprof}:7060"
+      - "${p2p_port}:${p2p_port}"
+      - "${p2p_port}:${p2p_port}/udp"
+    command: ["/node_deploy/node_entrypoint.sh"]
+
+EOF
+    fi
+
+    echo "Generated \${COMPOSE_FILE} successfully!"
+}
 
 # 9. Use create-validator tool to register validator nodes on StakeHub
 function register_stakehub(){
@@ -289,6 +396,7 @@ prepare)
     prepare_config     # Step 5: Generate genesis.json and node configs
     initNetwork        # Step 6: Initialize Geth data directories
     patch_p2p_network  # Step 7: Patch 127.0.0.1 in configs to docker DNS
+    generate_compose   # Step 8: Generate .env.cluster and docker-compose
     ;;
 register)
     register_stakehub
