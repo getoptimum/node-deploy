@@ -242,6 +242,9 @@ function patch_p2p_network() {
         p2p_port=30511
         find ${workspace}/.local -name "config.toml" -type f -exec sed -i -e "s/127.0.0.1:${p2p_port}/bsc-fullnode-0:${p2p_port}/g" {} \;
     fi
+
+    # Force Geth to output to STDOUT instead of file by removing the default FilePath config
+    find ${workspace}/.local -name "config.toml" -type f -exec sed -i -e '/FilePath/d' {} \;
 }
 
 # 8. Extract variables and generate docker-compose file
