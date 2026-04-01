@@ -13,18 +13,8 @@ size=$((BSC_CLUSTER_SIZE))
 stateScheme="hash"
 dbEngine="leveldb"
 gcmode="full"
-sleepBeforeStart=15
-sleepAfterStart=10
 
-# 1. Stop any previously running geth instances
-function exit_previous() {
-    ValIdx=$1
-    # if no geth exist just skip it
-    ps -ef  | grep geth$ValIdx | grep config |awk '{print $2}' | xargs -r kill
-    sleep ${sleepBeforeStart}
-}
-
-# 2. Cleanup .local and copy initial keys for validators
+# 1. Cleanup .local and copy initial keys for validators
 function create_validator() {
     rm -rf ${workspace}/.local
     mkdir -p ${workspace}/.local
@@ -35,18 +25,18 @@ function create_validator() {
     done
 }
 
-# 3. Build bsc geth client from source if configured
+# 2. Build bsc geth client from source if configured
 function prepare_bsc_client() {
     if [ ${useLatestBscClient} = true ]; then
         if [ ! -f "${workspace}/bsc/Makefile" ]; then
             cd ${workspace}
             git clone https://github.com/bnb-chain/bsc.git
         fi
-        cd ${workspace}/bsc && git pull && make geth && mv -f ${workspace}/bsc/build/bin/geth ${workspace}/bin/
+        cd ${workspace}/bsc && git pull && make geth && cp -f ${workspace}/bsc/build/bin/geth ${workspace}/bin/
     fi
 }
 
-# 4. Reset genesis submodule and install dependencies (Poetry, NPM, Forge)
+# 3. Reset genesis submodule and install dependencies (Poetry, NPM, Forge)
 # This prepares the environment for generating the genesis block
 function reset_genesis() {
     if [ ! -f "${workspace}/genesis/genesis-template.json" ]; then
@@ -79,7 +69,7 @@ function reset_genesis() {
     git clone https://github.com/dapphub/ds-test
 }
 
-# 5. Generate validator configurations, hardfork times, and the final genesis.json
+# 4. Generate validator configurations, hardfork times, and the final genesis.json
 function prepare_config() {
     rm -f ${workspace}/genesis/validators.conf
 
@@ -149,7 +139,7 @@ function prepare_config() {
     cp genesis-dev.json genesis.json
 }
 
-# 6. Initialize the geth network for each node using the generated genesis.json
+# 5. Initialize the geth network for each node using the generated genesis.json
 function initNetwork() {
     cd ${workspace}
     # 1. Assigning P2P Identities
@@ -218,7 +208,7 @@ function initNetwork() {
     fi
 }
 
-# 7. Patch P2P network to use Docker DNS instead of localhost
+# 6. Patch P2P network to use Docker DNS instead of localhost
 function patch_p2p_network() {
     # Replace 127.0.0.1 IPs in config.toml with docker-compose service names
     for ((i=0; i<size; i++)); do
@@ -247,7 +237,7 @@ function patch_p2p_network() {
     find ${workspace}/.local -name "config.toml" -type f -exec sed -i -e '/FilePath/d' {} \;
 }
 
-# 8. Extract variables and generate docker-compose file
+# 7. Extract variables and generate docker-compose file
 function generate_compose() {
     PassedForkTime=$(cat ${workspace}/.local/node0/hardforkTime.txt|grep passedHardforkTime|awk -F" " '{print $NF}')
     LastHardforkTime=$(expr ${PassedForkTime} + ${LAST_FORK_MORE_DELAY})
@@ -356,7 +346,7 @@ EOF
     echo "Generated \${COMPOSE_FILE} successfully!"
 }
 
-# 9. Use create-validator tool to register validator nodes on StakeHub
+# 8. Use create-validator tool to register validator nodes on StakeHub
 function register_stakehub(){
     # wait feynman enable
     sleep 45
@@ -368,43 +358,22 @@ function register_stakehub(){
 
 # Command dispatcher
 CMD=$1
-ValidatorIdx=$2
 case ${CMD} in
-reset)
-    # The 'reset' flow perform a clean initialization of the entire local cluster:
-    exit_previous      # Step 1: Kill old processes
-    create_validator   # Step 2: Prepare keys and .local/
-    prepare_bsc_client # Step 3: Build geth if necessary
-    reset_genesis      # Step 4: Setup genesis deps (Forge, Poetry, etc)
-    prepare_config     # Step 5: Generate genesis.json and node configs
-    initNetwork        # Step 6: Initialize Geth data directories
-    native_start       # Step 7: Start the cluster nodes
-    register_stakehub  # Step 8: Register validators with the network
-    ;;
-stop)
-    exit_previous $ValidatorIdx
-    ;;
-start)
-    native_start $ValidatorIdx
-    ;;
-restart)
-    exit_previous $ValidatorIdx
-    native_start $ValidatorIdx
-    ;;
 prepare)
-    exit_previous      # Step 1: Kill old processes
-    create_validator   # Step 2: Prepare keys and .local/
-    prepare_bsc_client # Step 3: Build geth if necessary
-    reset_genesis      # Step 4: Setup genesis deps (Forge, Poetry, etc)
-    prepare_config     # Step 5: Generate genesis.json and node configs
-    initNetwork        # Step 6: Initialize Geth data directories
-    patch_p2p_network  # Step 7: Patch 127.0.0.1 in configs to docker DNS
-    generate_compose   # Step 8: Generate .env.cluster and docker-compose
+    echo "Preparing Docker cluster configs..."
+    create_validator   # Step 1: Prepare keys and .local/
+    prepare_bsc_client # Step 2: Build geth if necessary
+    reset_genesis      # Step 3: Setup genesis deps (Forge, Poetry, etc)
+    prepare_config     # Step 4: Generate genesis.json and node configs
+    initNetwork        # Step 5: Initialize Geth data directories
+    patch_p2p_network  # Step 6: Patch 127.0.0.1 in configs to docker DNS
+    generate_compose   # Step 7: Generate .env.cluster and docker-compose
+    echo "Preparation complete!"
     ;;
 register)
     register_stakehub
     ;;
 *)
-    echo "Usage: bsc_cluster.sh | reset | stop [vidx]| start [vidx]| restart [vidx]"
+    echo "Usage: docker_cluster.sh | prepare | register"
     ;;
 esac
