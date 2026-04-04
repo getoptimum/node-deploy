@@ -343,6 +343,13 @@ EOF
 EOF
     fi
 
+    cat <<EOF >> $COMPOSE_FILE
+
+networks:
+  default:
+    name: bsc_cluster_network
+EOF
+
     echo "Generated \${COMPOSE_FILE} successfully!"
 }
 
