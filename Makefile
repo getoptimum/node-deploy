@@ -7,7 +7,7 @@ TOOLBOX_IMAGE ?= bsc-toolbox:latest
 COMPOSE_FILE := $(CURDIR)/docker-compose.cluster.yml
 
 # Auto initialize and bring up the cluster
-cluster-up:
+cluster-up: check-deps
 	@echo "[Phase 1] Initializing blockchain data & configs using isolated Toolbox environment..."
 	docker run --rm -v "$(CURDIR):/node_deploy" -w /node_deploy $(TOOLBOX_IMAGE) bash docker_cluster.sh prepare
 	@echo ""
@@ -39,3 +39,7 @@ cluster-restart: cluster-down
 	@echo "Restarting all BSC containers with existing config (Phase 2 only)..."
 	if [ -f $(COMPOSE_FILE) ]; then docker compose -f $(COMPOSE_FILE) up -d; fi
 	@echo "BSC Local Cluster successfully restarted."
+
+# Ensure host has curl for wait-rpc (Phase 3)
+check-deps:
+	@command -v curl >/dev/null 2>&1 || (echo "ERROR: 'curl' not found on host. It is required for Phase 3!" && exit 1)
