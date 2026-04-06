@@ -13,6 +13,9 @@ cluster-up:
 	@echo ""
 	@echo "[Phase 2] Data prepared! Starting BSC cluster via Docker Compose..."
 	docker compose -f $(COMPOSE_FILE) up -d
+	@echo "[Phase 3] Waiting for RPC... then Registering Validators"
+	@bash docker_cluster.sh wait-rpc
+	@docker run --network bsc_cluster_network --rm -v "$(CURDIR):/node_deploy" -w /node_deploy $(TOOLBOX_IMAGE) bash docker_cluster.sh register
 	@echo "BSC Local Cluster successfully started in background! Run 'make cluster-logs' to view live logs."
 
 # Safely stop and remove all containers
