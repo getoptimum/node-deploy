@@ -12,3 +12,8 @@ lib/
 bsc/
 docker-compose.cluster.yml
 .env.cluster
+
+# Local deployment credentials and generated key material
+.env
+keys/
+*.keystore.json

@@ -1,6 +1,5 @@
 # Deployment tools of BSC
 
-
 ## Installation
 Before proceeding to the next steps, please ensure that the following packages and softwares are well installed in your local machine: 
 
@@ -17,17 +16,20 @@ Before proceeding to the next steps, please ensure that the following packages a
 
 
 ## Quick Start
+
 1. Clone this repository
+
 ```bash
 git clone https://github.com/bnb-chain/node-deploy.git
 ```
 
-2. For the first time, please execute the following command
+1. For the first time, please execute the following command
+
 ```bash
 pip3 install -r requirements.txt
 ```
 
-3. build `create-validator`
+1. build `create-validator`
 
 ```bash
 # This tool is used to register the validators into StakeHub.
@@ -35,17 +37,22 @@ cd create-validator
 go build
 ```
 
-4. Configure the cluster
-```
-  You can configure the cluster by modifying the following files:
-   - `config.toml`
-   - `genesis/genesis-template.json`
-   - `genesis/scripts/init_holders.template`
-   - `.env`
+1. Configure the cluster
+
+```bash
+cp .env.example .env
 ```
 
-5. Setup all nodes.
+Then set deployment-specific values in the local, ignored `.env` file. You can also modify the following files:
+Before starting the cluster, rotate any deployment credentials or key material that was previously committed to Git.
+
+- `config.toml`
+- `genesis/genesis-template.json`
+- `genesis/scripts/init_holders.template`
+
+1. Setup all nodes.
 two different ways, choose as you like.
+
 ```bash
 bash -x ./bsc_cluster.sh reset # will reset the cluster and start
 # The 'vidx' parameter is optional. If provided, its value must be in the range [0, ${BSC_CLUSTER_SIZE}). If omitted, it affects all clusters.
@@ -54,7 +61,7 @@ bash -x ./bsc_cluster.sh start [vidx] # only start the cluster
 bash -x ./bsc_cluster.sh restart [vidx] # start the cluster after stopping it
 ```
 
-6. Setup a full node.
+1. Setup a full node.
 If you want to run a full node to test snap/full syncing, you can run:
 
 > Attention: it relies on the validator cluster, so you should set up validators by `bsc_cluster.sh` firstly.
@@ -81,6 +88,7 @@ You can see the logs in `.local/fullnode`.
 Generally, you need to wait for the validator to produce a certain amount of blocks before starting the full/snap syncing test, such as 1000 blocks.
 
 ## Background transactions
+
 ```bash
 ## normal tx
 cd txbot
@@ -95,7 +103,7 @@ go build
 
 ## Docker Version (Recommended)
 
-To run a fully containerized, isolated local BSC cluster without installing dependencies on your host machine, use the provided `Makefile` which handles the 2-phase orchestration automatically.
+To run a fully containerized, isolated local BSC cluster without installing dependencies on your host machine, use the provided `Makefile` which handles the 3-phase orchestration automatically.
 
 ### Architecture Workflow
 
@@ -165,7 +173,7 @@ Each node runs identically on port `8545` internally. Host mapping is structured
 | **Node 3** | 8551 | 6066 | 7066 | 30314 |
 
 For example, to check the block height of Node 1:
-`curl -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://127.0.0.1:8547`
+`curl -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' [http://127.0.0.1:8547](http://127.0.0.1:8547)`
 
 ### Logging
 
